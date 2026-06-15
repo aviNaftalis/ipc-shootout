@@ -23,11 +23,27 @@ numbers are produced by the CI run (see the Actions tab).
 | **named pipe** | 85 µs | 8.6 µs | 467 MB/s | 128 LOC | 8 | both — but two different APIs |
 | **tcp loopback** | 106 µs | 20 µs | 444 MB/s | 50 LOC | 0 | universal |
 
+And the same benchmark on **Windows** (from CI, `windows-latest`):
+
+| mechanism | RTT median | throughput |
+|---|--:|--:|
+| **shared memory** | **0.2 µs** | **7270 MB/s** |
+| **named pipe** | 28.5 µs | 1510 MB/s |
+| **unix socket** | 31.5 µs | 1424 MB/s |
+| **tcp loopback** | 41.2 µs | 1130 MB/s |
+
 Shared memory is **~250× lower latency** because the data never crosses the
 kernel on the hot path — the others pay two context switches per round trip. It
 pays for it in **code** (you write your own sync + framing) and **CPU** (the
 busy-wait spin pins a core). TCP is the slowest but the simplest and the only
 one with *zero* OS-specific code.
+
+**The OS ranking flips:** on Windows the **named pipe is the fastest
+kernel-mediated transport** (Windows Named Pipes are heavily optimized),
+beating AF_UNIX and TCP; on Linux the Unix socket edges out the pipe. Shared
+memory wins on both. (The Windows runner is a real VM with less scheduling
+jitter than this WSL2 host, so its socket latencies are also lower — compare
+ranks across an OS, not absolute numbers across machines.)
 
 ## The four mechanisms — pros & cons
 
