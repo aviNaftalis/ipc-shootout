@@ -44,12 +44,12 @@ precious → the spin is a real tax.
 
 And the same benchmark on **Windows** (from CI, `windows-latest`):
 
-| mechanism | RTT median | throughput |
-|---|--:|--:|
-| **shared memory** | **0.2 µs** | **7270 MB/s** |
-| **named pipe** | 28.5 µs | 1510 MB/s |
-| **unix socket** | 31.5 µs | 1424 MB/s |
-| **tcp loopback** | 41.2 µs | 1130 MB/s |
+| mechanism | RTT median | throughput | CPU overhead |
+|---|--:|--:|--:|
+| **shared memory** | **0.1 µs** | **7740 MB/s** | 1.9 cores |
+| **named pipe** | 27 µs | 1610 MB/s | 0.9 cores |
+| **unix socket** | 31 µs | 1440 MB/s | 0.9 cores |
+| **tcp loopback** | 40 µs | 1130 MB/s | 1.0 cores |
 
 Shared memory is **~250× lower latency** because the data never crosses the
 kernel on the hot path — the others pay two context switches per round trip. It
