@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-bench:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test (per-channel smoke)
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Benchmark all channels
+        shell: bash
+        run: |
+          BIN=build/ipc_bench
+          [ -f build/Release/ipc_bench.exe ] && BIN=build/Release/ipc_bench.exe
+          echo "## ${{ matrix.os }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' | tee -a "$GITHUB_STEP_SUMMARY"
+          for ch in tcp uds pipe shm; do
+            "$BIN" --channel "$ch" --warmup 1000 --lat 20000 --tput 5000 2>&1 \
+              | grep -v '^CSV' | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          echo '```' | tee -a "$GITHUB_STEP_SUMMARY"
