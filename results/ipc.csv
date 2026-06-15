@@ -1,5 +1,5 @@
-channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps
-tcp,64,105701.0,20100.0,65536,443.6
-uds,64,81501.0,8601.0,65536,563.6
-pipe,64,85300.0,8600.0,65536,467.3
-shm,64,300.0,0.0,65536,3352.5
+channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps,cores
+tcp,64,108601.0,35500.0,65536,447.9,0.952
+uds,64,81401.0,8500.0,65536,546.2,0.996
+pipe,64,85500.0,7400.0,65536,496.8,0.860
+shm,64,300.0,200.0,65536,3503.4,2.003

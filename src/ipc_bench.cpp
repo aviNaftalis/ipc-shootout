@@ -79,18 +79,25 @@ int main(int argc, char** argv) {
             "--tput", std::to_string(p.tput_iters),
         });
         ch->accept_client();
-        const Metrics m = run_initiator(*ch, p);
-        const int rc = wait_for(child);
+
+        // Wrap the whole run to measure CPU overhead (both processes / wall).
+        const double cpu0 = cpu_ms_self();
+        const auto wall0 = steady::now();
+        Metrics m = run_initiator(*ch, p);
+        const double wall_ms = ns_since(wall0) / 1e6;
+        const double self_cpu = cpu_ms_self() - cpu0;
+        const WaitResult wr = wait_for(child);
+        m.cores = wall_ms > 0 ? (self_cpu + wr.child_cpu_ms) / wall_ms : 0;
 
         std::fprintf(stderr,
-                     "%-5s | RTT median %8.0f ns (one-way ~%7.0f ns) | "
-                     "throughput %8.1f MB/s | %s\n",
+                     "%-5s | RTT %8.0f ns (1-way ~%6.0f) | throughput %7.1f MB/s | "
+                     "CPU %4.2f cores | %s\n",
                      channel.c_str(), m.rtt_med_ns, m.rtt_med_ns / 2, m.throughput_MBps,
-                     ch->portability());
-        // CSV: channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps
-        std::printf("CSV,%s,%zu,%.1f,%.1f,%zu,%.1f\n", channel.c_str(), p.small,
-                    m.rtt_med_ns, m.rtt_min_ns, p.big, m.throughput_MBps);
-        return rc;
+                     m.cores, ch->portability());
+        // CSV: channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps,cores
+        std::printf("CSV,%s,%zu,%.1f,%.1f,%zu,%.1f,%.3f\n", channel.c_str(), p.small,
+                    m.rtt_med_ns, m.rtt_min_ns, p.big, m.throughput_MBps, m.cores);
+        return wr.code;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "[%s] error: %s\n", role.c_str(), e.what());
         return 1;

@@ -50,18 +50,28 @@ inline ProcHandle spawn_self(const std::vector<std::string>& args) {
 #endif
 }
 
-inline int wait_for(ProcHandle h) {
+struct WaitResult {
+    int code = 0;
+    double child_cpu_ms = 0; // CPU the peer process burned (for the overhead metric)
+};
+
+inline WaitResult wait_for(ProcHandle h) {
 #if defined(_WIN32)
     WaitForSingleObject(h.hProcess, INFINITE);
+    FILETIME c, e, k, u;
+    GetProcessTimes(h.hProcess, &c, &e, &k, &u); // read before closing the handle
     DWORD code = 0;
     GetExitCodeProcess(h.hProcess, &code);
     CloseHandle(h.hProcess);
     CloseHandle(h.hThread);
-    return static_cast<int>(code);
+    return {static_cast<int>(code), filetime_ms(k) + filetime_ms(u)};
 #else
     int status = 0;
     waitpid(h, &status, 0);
-    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    rusage ru{};
+    ::getrusage(RUSAGE_CHILDREN, &ru); // reaped child's CPU
+    auto ms = [](timeval v) { return v.tv_sec * 1000.0 + v.tv_usec / 1000.0; };
+    return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, ms(ru.ru_utime) + ms(ru.ru_stime)};
 #endif
 }
 

@@ -64,38 +64,47 @@ def main():
     colors = [COLOR[c] for c in chans]
     rtt = [float(rows[c]["rtt_med_ns"]) for c in chans]
     tput = [float(rows[c]["throughput_MBps"]) for c in chans]
+    cores = [float(rows[c].get("cores", 0)) for c in chans]
     loc = [complexity(c)[0] for c in chans]
     branches = [complexity(c)[1] for c in chans]
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
 
-    a = axes[0]
+    a = axes[0][0]
     a.bar(labels, rtt, color=colors)
     a.set_yscale("log")
     a.set_ylabel("round-trip latency (ns, log) — lower is better")
-    a.set_title("Latency")
+    a.set_title("Latency (RTT = send + echo back)")
     for i, v in enumerate(rtt):
         a.text(i, v, f"{v:,.0f} ns", ha="center", va="bottom", fontsize=9)
 
-    a = axes[1]
+    a = axes[0][1]
     a.bar(labels, tput, color=colors)
     a.set_ylabel("ping-pong throughput (MB/s) — higher is better")
     a.set_title("Throughput")
     for i, v in enumerate(tput):
         a.text(i, v, f"{v:,.0f}", ha="center", va="bottom", fontsize=9)
 
-    a = axes[2]
+    a = axes[1][0]
+    a.bar(labels, cores, color=colors)
+    a.set_ylabel("CPU cores busied (both processes) — lower is cheaper")
+    a.set_title("CPU overhead — what throughput hides")
+    for i, v in enumerate(cores):
+        a.text(i, v, f"{v:.2f}", ha="center", va="bottom", fontsize=9)
+
+    a = axes[1][1]
     a.bar(labels, loc, color=colors)
     a.set_ylabel("lines of code — lower is simpler")
     a.set_title("Code complexity (impl size + OS branches)")
     for i, (l, b) in enumerate(zip(loc, branches)):
         a.text(i, l, f"{l} LOC\n{b} OS branches", ha="center", va="bottom", fontsize=9)
 
-    for a in axes:
-        a.tick_params(axis="x", rotation=15)
+    for row in axes:
+        for a in row:
+            a.tick_params(axis="x", rotation=12)
 
-    fig.suptitle("IPC shootout: fastest (shared memory) costs the most code & CPU; "
-                 "tcp is slowest but simplest & most portable", fontsize=13)
+    fig.suptitle("IPC shootout: shared memory wins latency & throughput — but its busy-wait "
+                 "burns ~2 cores; sockets/pipes are cheap CPU but slower", fontsize=13)
     fig.tight_layout()
     fig.savefig(os.path.join(IMG, "summary.png"), dpi=130)
     plt.close(fig)

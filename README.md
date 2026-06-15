@@ -10,18 +10,37 @@ Builds and runs on **Linux and Windows** (proven in CI on every push).
 
 ![IPC shootout summary](docs/img/summary.png)
 
+## What the metrics mean
+
+- **RTT (round-trip time)** — the headline latency number: the initiator sends a
+  small message, the peer echoes it straight back, and we time the full loop.
+  Both timestamps are taken on the *same* clock, so no cross-process clock sync is
+  needed. **One-way latency ≈ RTT / 2.**
+- **Throughput** — bytes/second moved by ping-ponging a large (64 KiB) frame.
+- **CPU overhead** — CPU time of *both* processes ÷ wall-clock = average cores
+  kept busy. This is the cost throughput hides: shared memory is fast because it
+  *busy-waits*, which pins ~2 whole cores even while "idle"; sockets and pipes
+  block in the kernel, so they cost far less CPU.
+- **Code complexity** — lines of code in the mechanism + how often it must branch
+  on `_WIN32`.
+
 ## Results
 
-12-core machine (WSL2 / g++ 15.2). *Median* round-trip is inflated by scheduler
-jitter on this host; *best* is closer to the mechanism's true floor. Windows
-numbers are produced by the CI run (see the Actions tab).
+12-core machine (WSL2 / g++ 15.2). *Median* RTT is inflated by scheduler jitter
+on this host; *best* is closer to the mechanism's true floor. Windows numbers
+come from CI (Actions tab).
 
-| mechanism | RTT median | RTT best | throughput | code | OS branches | portability |
+| mechanism | RTT median | RTT best | throughput | CPU overhead | code | portability |
 |---|--:|--:|--:|--:|--:|---|
-| **shared memory** | **0.3 µs** | **<0.1 µs** | **3350 MB/s** | 103 LOC | 2 | both (separate mapping APIs) |
-| **unix socket** | 82 µs | 8.6 µs | 564 MB/s | 56 LOC | 2 | Linux/macOS native, Win 10 1803+ |
-| **named pipe** | 85 µs | 8.6 µs | 467 MB/s | 128 LOC | 8 | both — but two different APIs |
-| **tcp loopback** | 106 µs | 20 µs | 444 MB/s | 50 LOC | 0 | universal |
+| **shared memory** | **0.3 µs** | **0.2 µs** | **3500 MB/s** | 2.0 cores | 103 LOC, 2 br | both (separate mapping APIs) |
+| **unix socket** | 81 µs | 8.5 µs | 546 MB/s | 1.0 cores | 56 LOC, 2 br | Linux/macOS native, Win 10 1803+ |
+| **named pipe** | 86 µs | 7.4 µs | 497 MB/s | 0.9 cores | 128 LOC, 8 br | both — two different APIs |
+| **tcp loopback** | 109 µs | 36 µs | 448 MB/s | 1.0 cores | 50 LOC, 0 br | universal |
+
+What throughput alone hides: **shared memory's speed costs ~2 full cores** of
+busy-wait spinning, while the kernel-mediated transports cost ~1 core total and
+sleep when truly idle. Spare cores + need the latency → shared memory; CPU is
+precious → the spin is a real tax.
 
 And the same benchmark on **Windows** (from CI, `windows-latest`):
 
@@ -56,9 +75,19 @@ Both processes `mmap` the same pages; a frame is a `memcpy` + an atomic flag fli
 
 ### 🔵 Unix-domain socket (AF_UNIX) — the sweet spot
 Ordinary sockets, but skipping the TCP/IP stack.
-- **+** Fast, simple, portable (Linux/macOS native; Windows 10 1803+); can pass FDs/credentials.
+- **+** Fast, simple, and portable (Linux/macOS native; Windows 10 1803+).
+- **+** On Linux it can also pass file descriptors / peer credentials (not on Windows).
 - **−** Still a syscall + copy per message, so far behind shared memory.
 - **Use when:** the sensible default for local IPC — fast and low-effort.
+
+> **Wait — Unix sockets on Windows?** Yes. Since **Windows 10 1803 / Server 2019**,
+> Winsock ships a real `AF_UNIX` provider (the `afunix.sys` driver, `afunix.h`
+> header). You call the *same* `socket()/bind()/connect()/send()/recv()` as on
+> Linux, and `sockaddr_un.sun_path` is a genuine **filesystem path** (an NTFS
+> file). Differences from Linux: stream-only (no `SOCK_DGRAM`), **no** abstract
+> namespace (the leading-NUL trick), and **no** FD/credential passing. For a
+> plain local byte stream the code is identical — which is exactly why one header
+> here compiles unchanged on both OSes.
 
 ### 🟠 Named pipe / FIFO — the portability cautionary tale
 - **+** Simple, named, discoverable stream.

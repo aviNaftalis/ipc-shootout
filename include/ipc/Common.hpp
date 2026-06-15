@@ -30,6 +30,7 @@ inline constexpr socket_t kBadSocket = INVALID_SOCKET;
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -127,6 +128,31 @@ inline void set_tcp_nodelay(socket_t s) {
 using steady = std::chrono::steady_clock;
 inline double ns_since(steady::time_point t0) {
     return std::chrono::duration<double, std::nano>(steady::now() - t0).count();
+}
+
+#if defined(_WIN32)
+inline double filetime_ms(FILETIME f) {
+    ULARGE_INTEGER x;
+    x.LowPart = f.dwLowDateTime;
+    x.HighPart = f.dwHighDateTime;
+    return static_cast<double>(x.QuadPart) / 10000.0; // 100ns units -> ms
+}
+#endif
+
+// CPU time (user+system) this process has consumed so far, in milliseconds.
+// Differenced across the run, this is the "overhead" a mechanism costs — e.g. a
+// busy-waiting spin shows up as ~1 core of CPU even while it "waits".
+inline double cpu_ms_self() {
+#if defined(_WIN32)
+    FILETIME c, e, k, u;
+    GetProcessTimes(GetCurrentProcess(), &c, &e, &k, &u);
+    return filetime_ms(k) + filetime_ms(u);
+#else
+    rusage ru{};
+    ::getrusage(RUSAGE_SELF, &ru);
+    auto ms = [](timeval v) { return v.tv_sec * 1000.0 + v.tv_usec / 1000.0; };
+    return ms(ru.ru_utime) + ms(ru.ru_stime);
+#endif
 }
 
 inline unsigned long current_pid() {

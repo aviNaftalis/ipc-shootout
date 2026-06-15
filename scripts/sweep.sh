@@ -15,7 +15,7 @@ BIN="$BUILD/ipc_bench"
 [ -f "$BUILD/Release/ipc_bench.exe" ] && BIN="$BUILD/Release/ipc_bench.exe"
 
 mkdir -p "$ROOT/results"
-echo "channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps" > "$OUT"
+echo "channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps,cores" > "$OUT"
 for ch in tcp uds pipe shm; do
   # stdout (the CSV line) -> file; stderr (the human summary) -> console
   "$BIN" --channel "$ch" --warmup 2000 --lat 30000 --tput 8000 \

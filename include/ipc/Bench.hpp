@@ -30,6 +30,7 @@ struct Metrics {
     double rtt_med_ns = 0;
     double rtt_min_ns = 0;
     double throughput_MBps = 0;
+    double cores = 0; // CPU overhead: avg cores busied (both processes) during the run
 };
 
 inline Metrics run_initiator(Channel& ch, const BenchParams& p) {
