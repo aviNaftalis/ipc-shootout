@@ -34,6 +34,9 @@ inline constexpr socket_t kBadSocket = INVALID_SOCKET;
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sched.h>
+#endif
 namespace ipc {
 using socket_t = int;
 inline constexpr socket_t kBadSocket = -1;
@@ -160,6 +163,25 @@ inline unsigned long current_pid() {
     return GetCurrentProcessId();
 #else
     return static_cast<unsigned long>(getpid());
+#endif
+}
+
+// Restrict the calling process to the first `n` logical CPUs (n<=0 = no limit).
+// Set on both peers, it lets you watch how each mechanism behaves when cores are
+// scarce — e.g. a busy-wait spinlock collapses once it can't have its own core.
+inline void pin_to_cpus(int n) {
+    if (n <= 0) return;
+#if defined(_WIN32)
+    DWORD_PTR mask = (n >= 64) ? ~static_cast<DWORD_PTR>(0)
+                               : ((static_cast<DWORD_PTR>(1) << n) - 1);
+    SetProcessAffinityMask(GetCurrentProcess(), mask);
+#elif defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    for (int i = 0; i < n; ++i) CPU_SET(i, &set);
+    sched_setaffinity(0, sizeof(set), &set);
+#else
+    (void)n; // no portable affinity API (e.g. macOS) — knob is a no-op
 #endif
 }
 

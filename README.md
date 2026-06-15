@@ -18,9 +18,12 @@ Builds and runs on **Linux and Windows** (proven in CI on every push).
   needed. **One-way latency ≈ RTT / 2.**
 - **Throughput** — bytes/second moved by ping-ponging a large (64 KiB) frame.
 - **CPU overhead** — CPU time of *both* processes ÷ wall-clock = average cores
-  kept busy. This is the cost throughput hides: shared memory is fast because it
-  *busy-waits*, which pins ~2 whole cores even while "idle"; sockets and pipes
-  block in the kernel, so they cost far less CPU.
+  kept busy. It's a **ratio, so it's fractional**: `2.0` = two cores pinned (both
+  busy-wait), `~1.0` = one side active at a time (the other blocked, off-CPU),
+  and **`< 1.0`** means the round trip has brief gaps where *neither* process is
+  on-CPU — kernel-wakeup/scheduler latency that isn't charged to anyone (this is
+  why the named pipe reads ~0.9). It's the cost throughput hides: shared memory
+  is fast because it busy-waits, pinning ~2 cores even while "idle".
 - **Code complexity** — lines of code in the mechanism + how often it must branch
   on `_WIN32`.
 
@@ -63,6 +66,33 @@ beating AF_UNIX and TCP; on Linux the Unix socket edges out the pipe. Shared
 memory wins on both. (The Windows runner is a real VM with less scheduling
 jitter than this WSL2 host, so its socket latencies are also lower — compare
 ranks across an OS, not absolute numbers across machines.)
+
+## Use case: how many CPUs can you spare? (`--cpus`)
+
+`--cpus N` pins both processes to the first N logical CPUs (Linux
+`sched_setaffinity`, Windows `SetProcessAffinityMask`). Squeezing the core count
+**flips the ranking completely**:
+
+![latency & throughput vs CPU count](docs/img/cpus.png)
+
+- **1 CPU:** shared memory is a **disaster — ~8 ms per round trip** (~25,000× its
+  multi-core latency, throughput 8 MB/s). Its busy-wait spinner hogs the only
+  core, so the peer can't run to answer until the scheduler preempts the spinner
+  a timeslice later. Meanwhile the **blocking transports get *faster*** (pipe
+  6.8 µs, uds 10 µs): with both peers on one core the handoff is a cheap
+  same-core context switch instead of an expensive cross-core wakeup.
+- **≥ 2 CPUs:** shared memory wins again (~300 ns); the blocking transports
+  settle to ~80–105 µs (paying cross-core wakeup latency on this host).
+
+The lesson: **busy-wait shared memory needs a core it can own.** If you can't
+dedicate one (oversubscribed host, a container pinned to 1 CPU, `taskset`),
+prefer a blocking transport — or make the shared-memory waiter *park/yield*
+instead of spin.
+
+```bash
+./build/ipc_bench --channel shm --cpus 1   # watch it crawl (~8 ms RTT)
+./build/ipc_bench --channel uds --cpus 1   # ...while this flies (~10 µs)
+```
 
 ## The four mechanisms — pros & cons
 

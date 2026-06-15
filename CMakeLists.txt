@@ -28,6 +28,8 @@ if(WIN32)
   target_link_libraries(ipc_bench PRIVATE ws2_32)
 elseif(UNIX AND NOT APPLE)
   target_link_libraries(ipc_bench PRIVATE rt)
+  # cpu_set_t / sched_setaffinity need _GNU_SOURCE under strict -std=c++23.
+  target_compile_definitions(ipc_bench PRIVATE _GNU_SOURCE)
 endif()
 
 enable_testing()

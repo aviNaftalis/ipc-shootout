@@ -57,7 +57,47 @@ def load():
     return rows
 
 
+def plot_cpus():
+    """RTT and throughput vs number of available CPUs — the key 'use case' knob.
+    Busy-wait shared memory collapses at 1 core; blocking transports don't."""
+    path = os.path.join(os.path.dirname(CSV), "cpus.csv")
+    if not os.path.exists(path):
+        return
+    data = {}
+    with open(path, newline="") as f:
+        for r in csv.DictReader(f):
+            data.setdefault(r["channel"], []).append(
+                (int(r["cpus"]), float(r["rtt_med_ns"]), float(r["throughput_MBps"])))
+    fig, (a_rtt, a_tp) = plt.subplots(1, 2, figsize=(13, 5))
+    for c in ORDER:
+        if c not in data:
+            continue
+        pts = sorted(data[c])
+        xs = [p[0] for p in pts]
+        a_rtt.plot(xs, [p[1] for p in pts], "-o", color=COLOR[c], label=NICE[c], lw=2)
+        a_tp.plot(xs, [p[2] for p in pts], "-o", color=COLOR[c], label=NICE[c], lw=2)
+    for a in (a_rtt, a_tp):
+        a.set_xscale("log", base=2)
+        a.set_xlabel("CPUs allowed (both processes pinned)")
+        a.grid(True, which="both", alpha=0.3)
+    a_rtt.set_yscale("log")
+    a_rtt.set_ylabel("round-trip latency (ns, log) — lower is better")
+    a_rtt.set_title("Latency vs available CPUs")
+    a_tp.set_yscale("log")
+    a_tp.set_ylabel("throughput (MB/s, log) — higher is better")
+    a_tp.set_title("Throughput vs available CPUs")
+    a_rtt.legend(fontsize=9)
+    fig.suptitle("Squeeze the CPUs: shared memory's busy-wait collapses at 1 core "
+                 "(~8 ms/round-trip); blocking transports get faster (same-core handoff)",
+                 fontsize=12)
+    fig.tight_layout()
+    fig.savefig(os.path.join(IMG, "cpus.png"), dpi=130)
+    plt.close(fig)
+    print(f"Wrote {IMG}/cpus.png")
+
+
 def main():
+    plot_cpus()
     rows = load()
     chans = [c for c in ORDER if c in rows]
     labels = [NICE[c] for c in chans]

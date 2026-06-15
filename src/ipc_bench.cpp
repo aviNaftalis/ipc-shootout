@@ -47,12 +47,14 @@ long arg_long(std::string_view v, long fb) {
 
 int main(int argc, char** argv) {
     std::string role = "server", channel = "tcp", endpoint;
+    int cpus = 0; // 0 = no CPU limit
     BenchParams p;
     for (int i = 1; i + 1 < argc; i += 2) {
         std::string_view k = argv[i], v = argv[i + 1];
         if (k == "--role") role = v;
         else if (k == "--channel") channel = v;
         else if (k == "--endpoint") endpoint = v;
+        else if (k == "--cpus") cpus = static_cast<int>(arg_long(v, 0));
         else if (k == "--small") p.small = static_cast<std::size_t>(arg_long(v, 64));
         else if (k == "--big") p.big = static_cast<std::size_t>(arg_long(v, 65536));
         else if (k == "--warmup") p.warmup = static_cast<int>(arg_long(v, p.warmup));
@@ -62,6 +64,8 @@ int main(int argc, char** argv) {
 
     try {
         NetInit net;
+        pin_to_cpus(cpus); // both peers pin themselves to the same CPU set
+
         if (role == "client") {
             auto ch = make_channel(channel, Role::Client);
             ch->connect_to(endpoint);
@@ -74,6 +78,7 @@ int main(int argc, char** argv) {
         const std::string ep = ch->setup_server();
         ProcHandle child = spawn_self({
             "--role", "client", "--channel", channel, "--endpoint", ep,
+            "--cpus", std::to_string(cpus),
             "--small", std::to_string(p.small), "--big", std::to_string(p.big),
             "--warmup", std::to_string(p.warmup), "--lat", std::to_string(p.lat_iters),
             "--tput", std::to_string(p.tput_iters),
@@ -90,13 +95,13 @@ int main(int argc, char** argv) {
         m.cores = wall_ms > 0 ? (self_cpu + wr.child_cpu_ms) / wall_ms : 0;
 
         std::fprintf(stderr,
-                     "%-5s | RTT %8.0f ns (1-way ~%6.0f) | throughput %7.1f MB/s | "
+                     "%-5s cpus=%-2d | RTT %9.0f ns (1-way ~%7.0f) | throughput %7.1f MB/s | "
                      "CPU %4.2f cores | %s\n",
-                     channel.c_str(), m.rtt_med_ns, m.rtt_med_ns / 2, m.throughput_MBps,
-                     m.cores, ch->portability());
-        // CSV: channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps,cores
-        std::printf("CSV,%s,%zu,%.1f,%.1f,%zu,%.1f,%.3f\n", channel.c_str(), p.small,
-                    m.rtt_med_ns, m.rtt_min_ns, p.big, m.throughput_MBps, m.cores);
+                     channel.c_str(), cpus, m.rtt_med_ns, m.rtt_med_ns / 2,
+                     m.throughput_MBps, m.cores, ch->portability());
+        // CSV: channel,small_bytes,rtt_med_ns,rtt_min_ns,big_bytes,throughput_MBps,cores,cpus
+        std::printf("CSV,%s,%zu,%.1f,%.1f,%zu,%.1f,%.3f,%d\n", channel.c_str(), p.small,
+                    m.rtt_med_ns, m.rtt_min_ns, p.big, m.throughput_MBps, m.cores, cpus);
         return wr.code;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "[%s] error: %s\n", role.c_str(), e.what());
